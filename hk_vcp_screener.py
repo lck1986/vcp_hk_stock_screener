@@ -70,76 +70,139 @@ import requests
 import pandas as pd
 from io import StringIO
 
+import requests
+import pandas as pd
+from io import StringIO
+
 def get_hk_index_tickers():
-    """从维基百科动态获取恒生指数、国企指数、恒生科技指数的全部成分股"""
-    
-    # 函数：从单个维基页面提取港股代码
-    def fetch_from_wiki(url, table_index=0):
+    """
+    智能获取恒生指数、国企指数、恒生科技指数的全部成分股。
+    优先从 Yahoo Finance 抓取，失败时使用 GitHub 备份，最后使用本地缓存。
+    所有代码自动补足 .HK 后缀，直接兼容 yfinance。
+    """
+
+    def fetch_hsi_from_yahoo():
+        """从 Yahoo Finance 抓取恒生指数成分股 (^HSI)"""
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=30)
+            url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=HSI_components_latest&count=100"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            resp = requests.get(url, headers=headers, timeout=15)
             resp.raise_for_status()
-            tables = pd.read_html(StringIO(resp.text))
-            df = tables[table_index]
-            
-            # 智能匹配包含股票代码的列
-            ticker_col = None
-            for col in df.columns:
-                col_lower = str(col).lower()
-                if any(keyword in col_lower for keyword in ['ticker', 'code', '代號', '代码', 'symbol']):
-                    ticker_col = col
-                    break
-            
-            if ticker_col is None:
-                # 如果没有列名匹配，尝试查找第一列包含数字的数据列
-                for col in df.columns:
-                    sample = df[col].dropna().astype(str).head(10)
-                    if sample.str.match(r'^\d{1,5}$').any():
-                        ticker_col = col
-                        break
-            
-            if ticker_col is None:
-                print(f"警告：无法在 {url} 中识别股票代码列")
-                return []
-            
-            codes = []
-            for code in df[ticker_col].dropna():
-                code_str = str(code).strip().replace('.HK', '').replace('.hk', '')
-                # 过滤掉非数字代码
-                if code_str.isdigit() and len(code_str) <= 5:
-                    codes.append(f'{code_str.zfill(4)}.HK')
-            
-            return codes
-            
+            data = resp.json()
+            rows = data['finance']['result'][0]['quotes']
+            codes = [f"{str(row['symbol']).replace('.HK', '').zfill(4)}.HK" for row in rows]
+            return codes if codes else None
         except Exception as e:
-            print(f'爬取失败 {url}: {e}')
-            return []
+            print(f'Yahoo Finance HSI 抓取失败: {e}')
+            return None
 
-    # 三个指数的维基百科页面
-    urls = {
-        'HSI': 'https://en.wikipedia.org/wiki/Hang_Seng_Index',
-        'HSCEI': 'https://en.wikipedia.org/wiki/Hang_Seng_China_Enterprises_Index',
-        'HSTECH': 'https://en.wikipedia.org/wiki/Hang_Seng_Tech_Index',
-    }
+    def fetch_hsi_from_github():
+        """从 GitHub 备份抓取恒生指数成分股"""
+        try:
+            url = "https://yfiua.github.io/index-constituents/constituents-hsi.csv"
+            df = pd.read_csv(url)
+            if 'Symbol' in df.columns:
+                codes = [f"{str(s).strip().replace('.HK', '').zfill(4)}.HK" for s in df['Symbol'].dropna()]
+                return codes
+        except Exception as e:
+            print(f'GitHub HSI 备份抓取失败: {e}')
+        return None
+
+    def fetch_hscei_from_yahoo():
+        """抓取恒生中国企业指数成分股"""
+        try:
+            url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=HSCEI_components_latest&count=100"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            rows = data['finance']['result'][0]['quotes']
+            codes = [f"{str(row['symbol']).replace('.HK', '').zfill(4)}.HK" for row in rows]
+            return codes if codes else None
+        except Exception as e:
+            print(f'Yahoo Finance HSCEI 抓取失败: {e}')
+            return None
+
+    def fetch_hstech_from_yahoo():
+        """抓取恒生科技指数成分股"""
+        try:
+            url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=HSTECH_components_latest&count=100"
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            rows = data['finance']['result'][0]['quotes']
+            codes = [f"{str(row['symbol']).replace('.HK', '').zfill(4)}.HK" for row in rows]
+            return codes if codes else None
+        except Exception as e:
+            print(f'Yahoo Finance HSTECH 抓取失败: {e}')
+            return None
+
+    # 最终本地缓存 (2025年最新)
+    FALLBACK_HSI = [
+        '0005.HK','0011.HK','0016.HK','0027.HK','0066.HK','0083.HK','0101.HK',
+        '0175.HK','0241.HK','0267.HK','0288.HK','0291.HK','0316.HK','0386.HK',
+        '0388.HK','0669.HK','0700.HK','0762.HK','0823.HK','0857.HK','0883.HK',
+        '0939.HK','0941.HK','0960.HK','0968.HK','0981.HK','0992.HK','1038.HK',
+        '1044.HK','1088.HK','1093.HK','1109.HK','1113.HK','1177.HK','1211.HK',
+        '1299.HK','1378.HK','1398.HK','1658.HK','1801.HK','1876.HK','1919.HK',
+        '1928.HK','1997.HK','2007.HK','2015.HK','2020.HK','2269.HK','2313.HK',
+        '2318.HK','2319.HK','2331.HK','2382.HK','2388.HK','2628.HK','2899.HK',
+        '3690.HK','3968.HK','3988.HK','6098.HK','6618.HK','6690.HK','6862.HK',
+        '9618.HK','9626.HK','9888.HK','9961.HK','9988.HK'
+    ]
     
+    FALLBACK_HSTECH = [
+        '0700.HK','9988.HK','3690.HK','1810.HK','1211.HK','9999.HK','9618.HK',
+        '2015.HK','1024.HK','6618.HK','2382.HK','1797.HK','2013.HK','9698.HK',
+        '9868.HK','9866.HK','6186.HK','0268.HK','0388.HK','0241.HK','0020.HK',
+        '1347.HK','0981.HK','0772.HK','1833.HK','6060.HK','0285.HK','9923.HK',
+        '9961.HK','9626.HK','2518.HK'
+    ]
+
+    FALLBACK_HSCEI = [
+        '0939.HK','1398.HK','3988.HK','1288.HK','9988.HK','3690.HK','0941.HK',
+        '0857.HK','0883.HK','0386.HK','0728.HK','0762.HK','2318.HK','2628.HK',
+        '2601.HK','1336.HK','2328.HK','0998.HK','3968.HK','1658.HK','1810.HK',
+        '1211.HK','0700.HK','9618.HK','9999.HK','2020.HK','2331.HK','2313.HK',
+        '2688.HK','0291.HK','1109.HK','3328.HK','6030.HK','6837.HK','2333.HK',
+        '1772.HK','1776.HK','3908.HK','6886.HK','2611.HK','6066.HK','6881.HK',
+        '6098.HK','6618.HK','6690.HK','6862.HK','9626.HK'
+    ]
+
     all_codes = set()
-    for index_name, url in urls.items():
-        print(f'正在抓取 {index_name} 成分股...')
-        codes = fetch_from_wiki(url)
-        print(f'  获取到 {len(codes)} 只成分股')
-        all_codes.update(codes)
-    
-    if not all_codes:
-        print('错误：维基百科抓取失败，使用备用列表')
-        # 备用列表（2025年最新）
-        fallback = [
-            '0005.HK', '0011.HK', '0016.HK', '0027.HK', '0066.HK', '0083.HK',
-            '0101.HK', '0175.HK', '0241.HK', '0267.HK', '0288.HK', '0291.HK',
-            # ... 更多备用代码
-        ]
-        all_codes = set(fallback)
-    
-    return sorted(list(all_codes))
 
+    # 1. 恒生指数
+    print('正在抓取 HSI 成分股...')
+    hsi_codes = fetch_hsi_from_yahoo() or fetch_hsi_from_github()
+    if hsi_codes:
+        all_codes.update(hsi_codes)
+        print(f'  获取到 {len(hsi_codes)} 只成分股')
+    else:
+        print(f'  HSI 所有在线源失效，使用本地缓存 ({len(FALLBACK_HSI)} 只)')
+        all_codes.update(FALLBACK_HSI)
+
+    # 2. 恒生中国企业指数
+    print('正在抓取 HSCEI 成分股...')
+    hscei_codes = fetch_hscei_from_yahoo()
+    if hscei_codes:
+        all_codes.update(hscei_codes)
+        print(f'  获取到 {len(hscei_codes)} 只成分股')
+    else:
+        print(f'  HSCEI 抓取失败，使用本地缓存 ({len(FALLBACK_HSCEI)} 只)')
+        all_codes.update(FALLBACK_HSCEI)
+
+    # 3. 恒生科技指数
+    print('正在抓取 HSTECH 成分股...')
+    hstech_codes = fetch_hstech_from_yahoo()
+    if hstech_codes:
+        all_codes.update(hstech_codes)
+        print(f'  获取到 {len(hstech_codes)} 只成分股')
+    else:
+        print(f'  HSTECH 抓取失败，使用本地缓存 ({len(FALLBACK_HSTECH)} 只)')
+        all_codes.update(FALLBACK_HSTECH)
+
+    return sorted(list(all_codes))
 def get_price_df(symbol, start=None, end=None):
     """Download and clean OHLCV dataframe."""
     if start is None:
