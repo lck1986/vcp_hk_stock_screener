@@ -2,7 +2,7 @@ name: HK VCP Screener (Weekdays 08:15 HKT)
 
 on:
   schedule:
-    - cron: '15 0 * * 1-5'
+    - cron: '15 0 * * 1-5'   # 星期一到五 HKT 08:15
   workflow_dispatch:
 
 jobs:
