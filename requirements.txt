@@ -4,5 +4,5 @@ yfinance
 requests
 certifi
 lxml
-html5lib
 openpyxl
+html5lib
